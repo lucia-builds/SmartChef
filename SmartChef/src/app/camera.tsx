@@ -1,3 +1,4 @@
+import { File } from "expo-file-system";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { router } from "expo-router";
 import { useRef, useState } from "react";
@@ -5,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -14,6 +16,8 @@ export default function CameraScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const [cameraReady, setCameraReady] = useState(false);
+  const [ingredients, setIngredients] = useState<string[]>([]);
+const [recipes, setRecipes] = useState<any[]>([]);
 
   if (!permission) {
     return (
@@ -47,29 +51,62 @@ export default function CameraScreen() {
     );
   }
 
-  const takePicture = async () => {
-    if (!cameraRef.current || !cameraReady) {
-      return;
-    }
+ const takePicture = async () => {
+  if (!cameraRef.current || !cameraReady) {
+    return;
+  }
 
-    try {
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.8,
-      });
+  try {
+    const photo = await cameraRef.current.takePictureAsync({
+      quality: 0.8,
+    });
 
-      if (photo) {
-        console.log("PHOTO URI:", photo.uri);
+    if (!photo) return;
 
-        Alert.alert(
-          "Photo captured! ✅",
-          "SmartChef captured the fridge image successfully."
-        );
+    console.log("PHOTO URI:", photo.uri);
+
+    const imageFile = new File(photo.uri);
+
+    const formData = new FormData();
+
+    formData.append("image", imageFile);
+
+    const response = await fetch(
+      "http://192.168.29.177:5000/scan",
+      {
+        method: "POST",
+        body: formData,
       }
-    } catch (error) {
-      console.log(error);
-      Alert.alert("Error", "Could not capture the image.");
+    );
+
+    const data = await response.json();
+
+    console.log("SERVER RESPONSE:", data);
+
+    if (data.success) {
+  console.log("INGREDIENTS:", data.ingredients);
+
+  setIngredients(data.ingredients);
+
+  Alert.alert(
+    "Success ✅",
+    "Ingredients detected successfully!"
+  );
+} else {
+      Alert.alert(
+        "Error",
+        data.message || "Image upload failed"
+      );
     }
-  };
+  } catch (error) {
+    console.log("UPLOAD ERROR:", error);
+
+    Alert.alert(
+      "Upload Error",
+      "Could not send image to backend."
+    );
+  }
+};
 
   return (
     <View style={styles.container}>
@@ -98,6 +135,126 @@ export default function CameraScreen() {
 
         <View style={styles.scanBox} />
       </View>
+     {ingredients.length > 0 && (
+  <View style={styles.ingredientsContainer}>
+    <Text style={styles.ingredientsTitle}>
+      Ingredients Detected
+    </Text>
+
+    {ingredients.map((ingredient, index) => (
+      <Text key={index} style={styles.ingredientText}>
+        🥕 {ingredient}
+      </Text>
+    ))}
+
+    <Pressable
+  style={styles.cookButton}
+  onPress={async () => {
+    try {
+      const response = await fetch(
+        "http://192.168.29.177:5000/recipes",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ingredients: ingredients,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      console.log("RECIPE RESPONSE:", data);
+
+      if (data.success) {
+  console.log("RECIPES:", data.recipes);
+
+  setRecipes(data.recipes);
+
+  Alert.alert(
+    "Recipes Ready! 🍳",
+    `Gemini generated ${data.recipes.length} recipes.`
+  );
+} else {
+        Alert.alert(
+          "Recipe Error",
+          data.message || "Could not generate recipes."
+        );
+      }
+    } catch (error) {
+      console.log("RECIPE REQUEST ERROR:", error);
+
+      Alert.alert(
+        "Connection Error",
+        "Could not connect to the SmartChef backend."
+      );
+    }
+  }}
+>
+  <Text style={styles.cookButtonText}>
+    ✨ What Can I Cook?
+  </Text>
+</Pressable>
+  </View>
+)}
+
+{recipes.length > 0 && (
+  <View style={styles.recipesContainer}>
+    <Text style={styles.recipesTitle}>
+      🍳 Recipe Suggestions
+    </Text>
+
+    <ScrollView
+      showsVerticalScrollIndicator={true}
+      contentContainerStyle={styles.recipesContent}
+    >
+      {recipes.map((recipe, index) => (
+        <View key={index} style={styles.recipeCard}>
+          <Text style={styles.recipeName}>
+            {recipe.name}
+          </Text>
+
+          <Text style={styles.recipeDescription}>
+            {recipe.description}
+          </Text>
+
+          <Text style={styles.recipeSectionTitle}>
+            Ingredients
+          </Text>
+
+          {recipe.ingredients.map(
+            (ingredient: string, ingredientIndex: number) => (
+              <Text
+                key={ingredientIndex}
+                style={styles.recipeIngredient}
+              >
+                • {ingredient}
+              </Text>
+            )
+          )}
+
+          <Text style={styles.recipeSectionTitle}>
+            Cooking Steps
+          </Text>
+
+          {recipe.steps.map(
+            (step: string, stepIndex: number) => (
+              <Text
+                key={stepIndex}
+                style={styles.recipeStep}
+              >
+                {stepIndex + 1}. {step}
+              </Text>
+            )
+          )}
+        </View>
+      ))}
+    </ScrollView>
+  </View>
+)}
+
 
       <View style={styles.bottomControls}>
         <Text style={styles.helpText}>
@@ -116,6 +273,7 @@ export default function CameraScreen() {
 }
 
 const styles = StyleSheet.create({
+ 
   container: {
     flex: 1,
     backgroundColor: "black",
@@ -174,6 +332,69 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
+  recipesContainer: {
+  position: "absolute",
+  top: "10%",
+  left: 15,
+  right: 15,
+  bottom: 120,
+  backgroundColor: "rgba(255,255,255,0.97)",
+  borderRadius: 20,
+  padding: 15,
+  zIndex: 20,
+},
+
+recipesTitle: {
+  fontSize: 22,
+  fontWeight: "800",
+  color: "#173B2A",
+  marginBottom: 12,
+},
+
+recipeCard: {
+  backgroundColor: "#F7FAF5",
+  borderRadius: 16,
+  padding: 15,
+  marginBottom: 12,
+},
+
+recipeName: {
+  fontSize: 18,
+  fontWeight: "800",
+  color: "#173B2A",
+},
+
+recipeDescription: {
+  fontSize: 14,
+  color: "#68766E",
+  marginTop: 6,
+  lineHeight: 20,
+},
+
+recipeSectionTitle: {
+  fontSize: 15,
+  fontWeight: "700",
+  color: "#07915C",
+  marginTop: 12,
+  marginBottom: 5,
+},
+
+recipeIngredient: {
+  fontSize: 14,
+  color: "#333333",
+  marginBottom: 3,
+},
+
+recipeStep: {
+  fontSize: 14,
+  color: "#333333",
+  lineHeight: 20,
+  marginBottom: 5,
+},
+recipesContent: {
+  paddingBottom: 30,
+},
+
   topOverlay: {
     position: "absolute",
     top: 50,
@@ -226,6 +447,42 @@ const styles = StyleSheet.create({
     borderColor: "white",
     borderRadius: 25,
   },
+   ingredientsContainer: {
+    position: "absolute",
+    top: "18%",
+    left: 25,
+    right: 25,
+    backgroundColor: "rgba(255,255,255,0.95)",
+    borderRadius: 20,
+    padding: 20,
+    zIndex: 10,
+  },
+
+  ingredientsTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#173B2A",
+    marginBottom: 12,
+  },
+
+  ingredientText: {
+    fontSize: 16,
+    color: "#333333",
+    marginBottom: 8,
+  },
+  cookButton: {
+  marginTop: 15,
+  backgroundColor: "#07915C",
+  paddingVertical: 14,
+  borderRadius: 14,
+  alignItems: "center",
+},
+
+cookButtonText: {
+  color: "white",
+  fontSize: 16,
+  fontWeight: "700",
+},
 
   bottomControls: {
     position: "absolute",
