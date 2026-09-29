@@ -1,23 +1,37 @@
 import { File } from "expo-file-system";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import { fetch } from "expo/fetch";
 import { router } from "expo-router";
 import { useRef, useState } from "react";
+import { isRecipe } from "../types/recipe";
 import {
   ActivityIndicator,
   Alert,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+
+const API_BASE_URL = "http://192.168.29.177:5000";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function responseMessage(value: unknown, fallback: string): string {
+  return isRecord(value) && typeof value.message === "string"
+    ? value.message
+    : fallback;
+}
 
 export default function CameraScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [ingredients, setIngredients] = useState<string[]>([]);
-const [recipes, setRecipes] = useState<any[]>([]);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [loadingRecipes, setLoadingRecipes] = useState(false);
 
   if (!permission) {
     return (
@@ -51,62 +65,95 @@ const [recipes, setRecipes] = useState<any[]>([]);
     );
   }
 
- const takePicture = async () => {
-  if (!cameraRef.current || !cameraReady) {
-    return;
-  }
+  const takePicture = async () => {
+    if (!cameraRef.current || !cameraReady || isCapturing) {
+      return;
+    }
 
-  try {
-    const photo = await cameraRef.current.takePictureAsync({
-      quality: 0.8,
-    });
+    setIsCapturing(true);
 
-    if (!photo) return;
+    try {
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
+      const formData = new FormData();
+      formData.append("image", new File(photo.uri), "ingredients.jpg");
 
-    console.log("PHOTO URI:", photo.uri);
-
-    const imageFile = new File(photo.uri);
-
-    const formData = new FormData();
-
-    formData.append("image", imageFile);
-
-    const response = await fetch(
-      "http://192.168.29.177:5000/scan",
-      {
+      const response = await fetch(`${API_BASE_URL}/scan`, {
         method: "POST",
         body: formData,
+      });
+      const data: unknown = await response.json();
+
+      if (
+        !response.ok ||
+        !isRecord(data) ||
+        data.success !== true ||
+        !Array.isArray(data.ingredients)
+      ) {
+        Alert.alert("Scan Error", responseMessage(data, "Image upload failed."));
+        return;
       }
-    );
 
-    const data = await response.json();
-
-    console.log("SERVER RESPONSE:", data);
-
-    if (data.success) {
-  console.log("INGREDIENTS:", data.ingredients);
-
-  setIngredients(data.ingredients);
-
-  Alert.alert(
-    "Success ✅",
-    "Ingredients detected successfully!"
-  );
-} else {
-      Alert.alert(
-        "Error",
-        data.message || "Image upload failed"
+      const detectedIngredients = data.ingredients.filter(
+        (ingredient): ingredient is string => typeof ingredient === "string"
       );
-    }
-  } catch (error) {
-    console.log("UPLOAD ERROR:", error);
 
-    Alert.alert(
-      "Upload Error",
-      "Could not send image to backend."
-    );
-  }
-};
+      if (detectedIngredients.length === 0) {
+        Alert.alert("No Ingredients Found", "Try another photo with ingredients clearly visible.");
+        return;
+      }
+
+      setIngredients(detectedIngredients);
+    } catch (error) {
+      console.log("UPLOAD ERROR:", error);
+      Alert.alert("Upload Error", "Could not send image to the backend.");
+    } finally {
+      setIsCapturing(false);
+    }
+  };
+
+  const findRecipes = async () => {
+    if (loadingRecipes || ingredients.length === 0) {
+      return;
+    }
+
+    setLoadingRecipes(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/recipes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ingredients }),
+      });
+      const data: unknown = await response.json();
+
+      if (
+        !response.ok ||
+        !isRecord(data) ||
+        data.success !== true ||
+        !Array.isArray(data.recipes)
+      ) {
+        Alert.alert("Recipe Error", responseMessage(data, "Could not generate recipes."));
+        return;
+      }
+
+      const recipes = data.recipes.filter(isRecipe);
+
+      if (recipes.length === 0) {
+        Alert.alert("Recipe Error", "The backend did not return any valid recipes.");
+        return;
+      }
+
+      router.push({
+        pathname: "/recipes",
+        params: { recipes: JSON.stringify(recipes) },
+      });
+    } catch (error) {
+      console.log("RECIPE REQUEST ERROR:", error);
+      Alert.alert("Connection Error", "Could not connect to the SmartChef backend.");
+    } finally {
+      setLoadingRecipes(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -135,137 +182,45 @@ const [recipes, setRecipes] = useState<any[]>([]);
 
         <View style={styles.scanBox} />
       </View>
-     {ingredients.length > 0 && (
-  <View style={styles.ingredientsContainer}>
-    <Text style={styles.ingredientsTitle}>
-      Ingredients Detected
-    </Text>
-
-    {ingredients.map((ingredient, index) => (
-      <Text key={index} style={styles.ingredientText}>
-        🥕 {ingredient}
-      </Text>
-    ))}
-
-    <Pressable
-  style={styles.cookButton}
-  onPress={async () => {
-    try {
-      const response = await fetch(
-        "http://192.168.29.177:5000/recipes",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            ingredients: ingredients,
-          }),
-        }
-      );
-
-      const data = await response.json();
-
-      console.log("RECIPE RESPONSE:", data);
-
-      if (data.success) {
-  console.log("RECIPES:", data.recipes);
-
-  setRecipes(data.recipes);
-
-  Alert.alert(
-    "Recipes Ready! 🍳",
-    `Gemini generated ${data.recipes.length} recipes.`
-  );
-} else {
-        Alert.alert(
-          "Recipe Error",
-          data.message || "Could not generate recipes."
-        );
-      }
-    } catch (error) {
-      console.log("RECIPE REQUEST ERROR:", error);
-
-      Alert.alert(
-        "Connection Error",
-        "Could not connect to the SmartChef backend."
-      );
-    }
-  }}
->
-  <Text style={styles.cookButtonText}>
-    ✨ What Can I Cook?
-  </Text>
-</Pressable>
-  </View>
-)}
-
-{recipes.length > 0 && (
-  <View style={styles.recipesContainer}>
-    <Text style={styles.recipesTitle}>
-      🍳 Recipe Suggestions
-    </Text>
-
-    <ScrollView
-      showsVerticalScrollIndicator={true}
-      contentContainerStyle={styles.recipesContent}
-    >
-      {recipes.map((recipe, index) => (
-        <View key={index} style={styles.recipeCard}>
-          <Text style={styles.recipeName}>
-            {recipe.name}
-          </Text>
-
-          <Text style={styles.recipeDescription}>
-            {recipe.description}
-          </Text>
-
-          <Text style={styles.recipeSectionTitle}>
-            Ingredients
-          </Text>
-
-          {recipe.ingredients.map(
-            (ingredient: string, ingredientIndex: number) => (
-              <Text
-                key={ingredientIndex}
-                style={styles.recipeIngredient}
-              >
-                • {ingredient}
-              </Text>
-            )
-          )}
-
-          <Text style={styles.recipeSectionTitle}>
-            Cooking Steps
-          </Text>
-
-          {recipe.steps.map(
-            (step: string, stepIndex: number) => (
-              <Text
-                key={stepIndex}
-                style={styles.recipeStep}
-              >
-                {stepIndex + 1}. {step}
-              </Text>
-            )
-          )}
+      {ingredients.length > 0 && (
+        <View style={styles.ingredientsContainer}>
+          <Text style={styles.ingredientsTitle}>Ingredients Detected</Text>
+          {ingredients.map((ingredient, index) => (
+            <Text key={`${ingredient}-${index}`} style={styles.ingredientText}>
+              {ingredient}
+            </Text>
+          ))}
+          <Pressable
+            accessibilityRole="button"
+            disabled={loadingRecipes}
+            style={[styles.cookButton, loadingRecipes && styles.disabledButton]}
+            onPress={findRecipes}
+          >
+            <Text style={styles.cookButtonText}>
+              {loadingRecipes ? "Finding Recipes..." : "What Can I Cook?"}
+            </Text>
+          </Pressable>
         </View>
-      ))}
-    </ScrollView>
-  </View>
-)}
+      )}
 
 
       <View style={styles.bottomControls}>
         <Text style={styles.helpText}>
-          Point the camera at the ingredients in your fridge
+          {isCapturing ? "Scanning ingredients..." : "Point the camera at your ingredients"}
         </Text>
 
         <Pressable
-          style={styles.captureButton}
+          accessibilityRole="button"
+          accessibilityLabel="Take ingredient photo"
+          disabled={!cameraReady || isCapturing}
+          style={[styles.captureButton, (!cameraReady || isCapturing) && styles.disabledButton]}
           onPress={takePicture}
         >
-          <View style={styles.captureInner} />
+          {isCapturing ? (
+            <ActivityIndicator color="#07915C" />
+          ) : (
+            <View style={styles.captureInner} />
+          )}
         </Pressable>
       </View>
     </View>
@@ -331,69 +286,6 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "700",
   },
-
-  recipesContainer: {
-  position: "absolute",
-  top: "10%",
-  left: 15,
-  right: 15,
-  bottom: 120,
-  backgroundColor: "rgba(255,255,255,0.97)",
-  borderRadius: 20,
-  padding: 15,
-  zIndex: 20,
-},
-
-recipesTitle: {
-  fontSize: 22,
-  fontWeight: "800",
-  color: "#173B2A",
-  marginBottom: 12,
-},
-
-recipeCard: {
-  backgroundColor: "#F7FAF5",
-  borderRadius: 16,
-  padding: 15,
-  marginBottom: 12,
-},
-
-recipeName: {
-  fontSize: 18,
-  fontWeight: "800",
-  color: "#173B2A",
-},
-
-recipeDescription: {
-  fontSize: 14,
-  color: "#68766E",
-  marginTop: 6,
-  lineHeight: 20,
-},
-
-recipeSectionTitle: {
-  fontSize: 15,
-  fontWeight: "700",
-  color: "#07915C",
-  marginTop: 12,
-  marginBottom: 5,
-},
-
-recipeIngredient: {
-  fontSize: 14,
-  color: "#333333",
-  marginBottom: 3,
-},
-
-recipeStep: {
-  fontSize: 14,
-  color: "#333333",
-  lineHeight: 20,
-  marginBottom: 5,
-},
-recipesContent: {
-  paddingBottom: 30,
-},
 
   topOverlay: {
     position: "absolute",
@@ -483,6 +375,10 @@ cookButtonText: {
   fontSize: 16,
   fontWeight: "700",
 },
+
+  disabledButton: {
+    opacity: 0.6,
+  },
 
   bottomControls: {
     position: "absolute",
