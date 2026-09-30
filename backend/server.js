@@ -214,6 +214,59 @@ Do not include text outside the JSON object.
   }
 });
 
+// Chat endpoint
+app.post("/chat", async (req, res) => {
+  console.log("CHAT REQUEST RECEIVED");
+
+  try {
+    const { message } = req.body;
+
+    if (!message || typeof message !== "string" || !message.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "No message provided",
+      });
+    }
+
+    console.log("USER MESSAGE:", message);
+
+    const result = await generateWithRetry({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          text: `
+You are SmartChef, a helpful AI cooking assistant.
+
+Answer the user's cooking-related question clearly and practically.
+
+User question:
+${message}
+
+Keep the response concise and easy to understand.
+          `,
+        },
+      ],
+    });
+
+    console.log("GEMINI CHAT RESPONSE:");
+    console.log(result.text);
+
+    res.json({
+      success: true,
+      reply: result.text,
+    });
+  } catch (error) {
+    console.error("CHAT ERROR:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to get AI response",
+      error: error.message,
+    });
+  }
+});
+
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`SmartChef server running on port ${PORT}`);
 });

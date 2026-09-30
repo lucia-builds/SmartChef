@@ -79,7 +79,10 @@ export default function HomeScreen() {
     </Text>
   </View>
 </TouchableOpacity>
-<TouchableOpacity style={styles.optionButton}>
+<TouchableOpacity
+  style={styles.optionButton}
+  onPress={() => router.push("/ask-smartchef")}
+>
   <Text style={styles.optionIcon}>🎤</Text>
 
   <View>
