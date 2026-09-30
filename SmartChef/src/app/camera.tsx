@@ -1,8 +1,9 @@
 import { File } from "expo-file-system";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { fetch } from "expo/fetch";
 import { router } from "expo-router";
-import { useRef, useState } from "react";
+import { useCallback,useRef, useState } from "react";
 import { isRecipe } from "../types/recipe";
 import {
   ActivityIndicator,
@@ -139,14 +140,34 @@ export default function CameraScreen() {
       const recipes = data.recipes.filter(isRecipe);
 
       if (recipes.length === 0) {
-        Alert.alert("Recipe Error", "The backend did not return any valid recipes.");
-        return;
-      }
+  Alert.alert("Recipe Error", "The backend did not return any valid recipes.");
+  return;
+}
 
-      router.push({
-        pathname: "/recipes",
-        params: { recipes: JSON.stringify(recipes) },
-      });
+try {
+  const existingRecent = await AsyncStorage.getItem("recentRecipes");
+
+  const previousRecipes = existingRecent
+    ? JSON.parse(existingRecent)
+    : [];
+
+  const updatedRecipes = [
+    ...recipes,
+    ...previousRecipes,
+  ];
+
+  await AsyncStorage.setItem(
+    "recentRecipes",
+    JSON.stringify(updatedRecipes.slice(0, 6))
+  );
+} catch (error) {
+  console.log("SAVE RECENT RECIPES ERROR:", error);
+}
+
+router.push({
+  pathname: "/recipes",
+  params: { recipes: JSON.stringify(recipes) },
+});
     } catch (error) {
       console.log("RECIPE REQUEST ERROR:", error);
       Alert.alert("Connection Error", "Could not connect to the SmartChef backend.");

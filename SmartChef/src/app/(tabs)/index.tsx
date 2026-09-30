@@ -1,4 +1,6 @@
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useCallback, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -8,6 +10,24 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 export default function HomeScreen() {
+  const [recentRecipes, setRecentRecipes] = useState<any[]>([]);
+
+  const loadRecentRecipes = async () => {
+    try {
+      const saved = await AsyncStorage.getItem("recentRecipes");
+
+      setRecentRecipes(saved ? JSON.parse(saved) : []);
+    } catch (error) {
+      console.log("LOAD RECENT RECIPES ERROR:", error);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadRecentRecipes();
+    }, [])
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
@@ -56,28 +76,75 @@ export default function HomeScreen() {
             </Text>
           </View>
         </TouchableOpacity>
+<TouchableOpacity style={styles.optionButton}>
+  <Text style={styles.optionIcon}>🎤</Text>
 
-        <TouchableOpacity style={styles.optionButton}>
-          <Text style={styles.optionIcon}>🎤</Text>
+  <View>
+    <Text style={styles.optionTitle}>Ask SmartChef</Text>
+    <Text style={styles.optionText}>
+      Talk with your AI cooking assistant
+    </Text>
+  </View>
+</TouchableOpacity>
+       <TouchableOpacity
+  style={styles.optionButton}
+  onPress={() => router.push("/saved-recipes")}
+>
+  <Text style={styles.optionIcon}>❤️</Text>
 
-          <View>
-            <Text style={styles.optionTitle}>Ask SmartChef</Text>
-            <Text style={styles.optionText}>
-              Talk with your AI cooking assistant
-            </Text>
-          </View>
-        </TouchableOpacity>
+  <View>
+    <Text style={styles.optionTitle}>Saved Recipes</Text>
+    <Text style={styles.optionText}>
+      View your favorite saved recipes
+    </Text>
+  </View>
+</TouchableOpacity>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Recipes</Text>
+       <View style={styles.section}>
+  <Text style={styles.sectionTitle}>Recent Recipes</Text>
 
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyIcon}>🍽️</Text>
-            <Text style={styles.emptyText}>
-              Your recently generated recipes will appear here.
-            </Text>
-          </View>
-        </View>
+  {recentRecipes.length === 0 ? (
+    <View style={styles.emptyBox}>
+      <Text style={styles.emptyIcon}>🍽️</Text>
+
+      <Text style={styles.emptyText}>
+        Your recently generated recipes will appear here.
+      </Text>
+    </View>
+  ) : (
+    recentRecipes.map((recipe, index) => (
+      <TouchableOpacity
+        key={`${recipe.name}-${index}`}
+        style={styles.recentRecipeCard}
+        onPress={() => {
+          router.push({
+            pathname: "/recipe-details",
+            params: {
+              recipe: encodeURIComponent(
+                JSON.stringify(recipe)
+              ),
+            },
+          });
+        }}
+      >
+        <Text style={styles.recentRecipeName}>
+          {recipe.name}
+        </Text>
+
+        <Text
+          style={styles.recentRecipeDescription}
+          numberOfLines={2}
+        >
+          {recipe.description}
+        </Text>
+
+        <Text style={styles.viewRecentText}>
+          View Recipe →
+        </Text>
+      </TouchableOpacity>
+    ))
+  )}
+</View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -210,5 +277,33 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: "#738077",
     lineHeight: 20,
+  },
+    recentRecipeCard: {
+    backgroundColor: "white",
+    padding: 16,
+    borderRadius: 18,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E6EBE7",
+  },
+
+  recentRecipeName: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#23372B",
+  },
+
+  recentRecipeDescription: {
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 19,
+    color: "#68766E",
+  },
+
+  viewRecentText: {
+    marginTop: 10,
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#07915C",
   },
 });

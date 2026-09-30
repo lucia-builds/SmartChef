@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const multer=require("multer");
 const { GoogleGenAI } = require("@google/genai");
+
 const app = express();
 
 app.use(cors());
@@ -17,6 +18,38 @@ const upload = multer({
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
+
+async function generateWithRetry(request, maxRetries = 3) {
+  let lastError;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await ai.models.generateContent(request);
+    } catch (error) {
+      lastError = error;
+
+      const status = error.status;
+
+      if (status !== 429 && status !== 503) {
+        throw error;
+      }
+
+      if (attempt === maxRetries) {
+        throw error;
+      }
+
+      const delay = Math.min(1000 * 2 ** attempt, 8000);
+
+      console.log(
+        `Gemini ${status} error. Retrying in ${delay / 1000}s...`
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError;
+}
 
 app.get("/", (req, res) => {
   res.json({
@@ -40,7 +73,7 @@ app.post("/scan", upload.single("image"), async (req, res) => {
     console.log("File type:", req.file.mimetype);
     console.log("File size:", req.file.size);
 
-    const result = await ai.models.generateContent({
+    const result = await generateWithRetry({
       model: "gemini-2.5-flash",
       contents: [
         {
@@ -117,8 +150,8 @@ app.post("/recipes", async (req, res) => {
 
     console.log("INGREDIENTS FOR RECIPE:", ingredients);
 
-    const result = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+const result = await generateWithRetry({
+        model: "gemini-2.5-flash",
       contents: [
         {
           text: `
