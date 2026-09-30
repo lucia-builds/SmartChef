@@ -66,16 +66,19 @@ export default function HomeScreen() {
   </View>
 </TouchableOpacity>
 
-        <TouchableOpacity style={styles.optionButton}>
-          <Text style={styles.optionIcon}>🥕</Text>
+        <TouchableOpacity
+  style={styles.optionButton}
+  onPress={() => router.push("/manual-ingredients")}
+>
+  <Text style={styles.optionIcon}>🥕</Text>
 
-          <View>
-            <Text style={styles.optionTitle}>Enter Ingredients</Text>
-            <Text style={styles.optionText}>
-              Add ingredients manually
-            </Text>
-          </View>
-        </TouchableOpacity>
+  <View>
+    <Text style={styles.optionTitle}>Enter Ingredients</Text>
+    <Text style={styles.optionText}>
+      Add ingredients manually
+    </Text>
+  </View>
+</TouchableOpacity>
 <TouchableOpacity style={styles.optionButton}>
   <Text style={styles.optionIcon}>🎤</Text>
 
